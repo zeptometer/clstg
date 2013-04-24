@@ -55,7 +55,7 @@
    (img :accessor .img)))
 
 (defmethod initialize-instance :after ((instance <object>) &key ((:img source) nil) &allow-other-keys)
-nn  (when source
+  (when source
     (setf (.img instance) (load-png-image source))))
 
 (defgeneric create (name &key &allow-other-keys))
@@ -68,9 +68,6 @@ nn  (when source
 (defmethod collidep (obj1 obj2 (trr1 <territory>) (trr2 <territory>))
   nil)
 (defgeneric collide (collidee collider))
-
-(defgeneric fix-position (obj))
-
 
 (defmethod collidep ((obj1 <object>) (obj2 <object>) 
 		     (trr1 <circle-territory>) (trr2 <circle-territory>))
@@ -90,7 +87,7 @@ nn  (when source
    (current-frame :accessor .current-frame
 		  :initform 0)))
 
-(defgeneric create-world (game))
+(defgeneric initialize-game (game))
 (defgeneric update-world (world))
 (defgeneric draw-world (world))
 
@@ -107,14 +104,14 @@ nn  (when source
 
 
 ;;; main loop
-(defun main (game)
+(defun start-game (game)
   (setf *registered-objects* nil)
   (sdl:with-init ()
     (sdl:window *screen-width* *screen-height* :title-caption "test") 
     (setf (sdl:frame-rate) 60) 
     (sdl:initialise-default-font sdl:*font-10x20*)
 
-    (let ((world (create-world game)))
+    (let ((world (initialize-game game)))
       (sdl:update-display)
 
       (sdl:with-events ()
@@ -133,7 +130,7 @@ nn  (when source
 
 	  ;; update each object
 	  (iter (for obj in *registered-objects*)
-		(update obj current-key-state))
+		(update obj world))
 
 	  ;; detect collidion
 	  ;; This collidion-detect uses full search, and is unefficient when (length *registered-objects*) is large.
