@@ -1,6 +1,40 @@
 (shooting.utils:namespace shooting.core
   (:use :common-lisp
-	:iterate))
+	:iterate)
+  (:export :*screen-width*
+	   :*screen-height*
+
+	   :defkeystate
+	   :register-object
+	   :discard
+
+	   :<territory>
+	   :<circle-territory>
+
+	   :<object>
+	   :.x
+	   :.y
+	   :.alivep
+	   
+	   :create
+	   :update
+	   :draw
+	   :collidablep
+	   :colldep
+
+	   :<game>
+	   :height
+	   :width
+	   :schedule
+
+	   :<world>
+	   :.key-state
+	   
+	   :initialize-game
+	   :update-world
+	   :draw-world
+
+	   :start-game))
 
 ;;;variables
 (defconstant +pi+ 3.141592653)
@@ -45,18 +79,11 @@
       :accessor .x)
    (y :initarg :y
       :accessor .y)
-   (speed :initarg :speed
-	  :accessor .speed)
    (alivep :initform t
 	   :accessor .alivep)
    (territory :type <territory>
 	      :initarg :territory
-	      :accessor .territory)
-   (img :accessor .img)))
-
-(defmethod initialize-instance :after ((instance <object>) &key ((:img source) nil) &allow-other-keys)
-  (when source
-    (setf (.img instance) (load-png-image source))))
+	      :accessor .territory)))
 
 (defgeneric create (name &key &allow-other-keys))
 (defgeneric update (obj world))
@@ -76,14 +103,28 @@
 	(sqr (+ (.radius trr1) (.radius trr2))))))
 
 
+(defun register-object (obj)
+  (declare (type <object> obj))
+  (push obj *tobe-registered-objects*))
+
+(defun discard (obj)
+  (setf (.alivep obj) nil))
+
 ;;; world
-(defclass <game> () ())
+(defclass <game> ()
+  ((height :initarg :height
+	   :initform 480)
+   (width :initarg :width
+	  :initform 640)
+   (schedule :initarg :schedule
+	     :initform nil)))
 
 (defclass <world> () 
   ((key-state :accessor .key-state
 	      :initarg :key-state)
-   (map :accessor .map
-	:initarg :map)
+   (schedule :accessor .schedule
+	     :initarg :schedule
+	     :initform nil)
    (current-frame :accessor .current-frame
 		  :initform 0)))
 
@@ -93,11 +134,12 @@
 
 (defmethod update-world ((world <world>)) nil)
 (defmethod update-world :before ((world <world>))
-  (with-accessors ((map .map) (current-frame .current-frame)) world
-    (destructuring-bind (frame event &rest rest) map
-      (when (= frame current-frame)
-	(funcall event)
-	(setf map rest)))
+  (with-accessors ((schedule .schedule) (current-frame .current-frame)) world
+    (when schedule
+      (destructuring-bind (frame event &rest rest) schedule
+	(when (= frame current-frame)
+	  (funcall event)
+	  (setf schedule rest))))
     (incf current-frame)))
 
 (defmethod draw-world ((wrold <world>)) nil)
@@ -106,53 +148,53 @@
 ;;; main loop
 (defun start-game (game)
   (setf *registered-objects* nil)
-  (sdl:with-init ()
-    (sdl:window *screen-width* *screen-height* :title-caption "test") 
-    (setf (sdl:frame-rate) 60) 
-    (sdl:initialise-default-font sdl:*font-10x20*)
+  (let ((world (initialize-game game)))
+    (sdl:with-init ()
+      (sdl:window *screen-width* *screen-height* :title-caption "test") 
+      (setf (sdl:frame-rate) 60) 
+      (sdl:initialise-default-font sdl:*font-10x20*)
 
-    (let ((world (initialize-game game)))
       (sdl:update-display)
 
       (sdl:with-events ()
 	(:quit-event () t)
 	(:key-down-event (:key key)
-	  (if (sdl:key= key :sdl-key-escape)
-	      (sdl:push-quit-event)
-	      (update-key-state key t (.key-state world))))
+			 (if (sdl:key= key :sdl-key-escape)
+			     (sdl:push-quit-event)
+			     (update-key-state key t (.key-state world))))
 	(:key-up-event (:key key)
-	  (update-key-state key nil (.key-state world)))
+		       (update-key-state key nil (.key-state world)))
 	(:idle ()
-	  (sdl:clear-display sdl:*black*)
+	       (sdl:clear-display sdl:*black*)
 
-	  ;; update world
-	  (update-world world)
+	       ;; update world
+	       (update-world world)
 
-	  ;; update each object
-	  (iter (for obj in *registered-objects*)
-		(update obj world))
+	       ;; update each object
+	       (iter (for obj in *registered-objects*)
+		     (update obj world))
 
-	  ;; detect collidion
-	  ;; This collidion-detect uses full search, and is unefficient when (length *registered-objects*) is large.
-	  ;; More efficient algorithm such as quadtree should be used.
-	  (iter (for obj1 in *registered-objects*)
-		(iter (for obj2 in *registered-objects*)
-		      (when (and (not (eq obj1 obj2))
-				 (collidablep obj1 obj2)
-				 (collidep obj1 obj2 (.territory obj1) (.territory obj2)))
-			(collide obj1 obj2))))
+	       ;; detect collidion
+	       ;; This collidion-detect uses full search, and is unefficient when (length *registered-objects*) is large.
+	       ;; More efficient algorithm such as quadtree should be used.
+	       (iter (for obj1 in *registered-objects*)
+		     (iter (for obj2 in *registered-objects*)
+			   (when (and (not (eq obj1 obj2))
+				      (collidablep obj1 obj2)
+				      (collidep obj1 obj2 (.territory obj1) (.territory obj2)))
+			     (collide obj1 obj2))))
 
-	  ;; update *registered-objects*
-	  (let ((alive (iter (for obj in *registered-objects*)
-			     (when (.alivep obj) (collect obj)))))
-	    (setf *registered-objects*
-		  (nconc alive *tobe-registered-objects*)
-		  *tobe-registered-objects* nil))
-	  
-	  ;; draw world
-	  (draw-world world)
+	       ;; update *registered-objects*
+	       (let ((alive (iter (for obj in *registered-objects*)
+				  (when (.alivep obj) (collect obj)))))
+		 (setf *registered-objects*
+		       (nconc alive *tobe-registered-objects*)
+		       *tobe-registered-objects* nil))
+	       
+	       ;; draw world
+	       (draw-world world)
 
-	  ;; draw alive objects
-	  (iter (for obj in *registered-objects*)
-		(draw obj))
-	  (sdl:update-display))))))
+	       ;; draw alive objects
+	       (iter (for obj in *registered-objects*)
+		     (draw obj))
+	       (sdl:update-display))))))
