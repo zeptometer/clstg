@@ -1,4 +1,10 @@
-(in-package :shooting.core)
+(shooting.utils:namespace example-game
+  (:use :common-lisp
+	:iterate
+	:shooting.core)
+  (:export :*example-game*))
+
+(in-package example-game)
 
 (defkeystate key-state
   (up    :sdl-key-w)
@@ -7,102 +13,116 @@
   (left  :sdl-key-a)
   (space :sdl-key-space))
 
+
+;;; game
+(defclass example (<game>) 
+  ((player-size :initarg :player-size
+		:initform 20)
+   (player-speed :initarg :player-speed
+		 :initform 5)))
+
+(defmethod initialize-game ((game example))
+  (with-slots (height width schedule player-size player-speed) game
+    (setf *screen-height* height
+	  *screen-width* width)
+    (create 'player
+	    :x (/ width 2)
+	    :y (- height 10 (/ player-size 2))
+	    :speed player-speed
+	    :radius (/ player-size 2))
+    (make-instance 'example-world
+		   :schedule schedule
+		   :key-state (make-instance 'key-state))))
+
+;;; world
+(defclass example-world (<world>) ())
+
+(defmethod update-world ((world example-world))
+  nil)
+
+(defmethod draw-world ((world example-world))
+  nil)
+
 ;;; player
-(defclass <player> (<object>)
-  ((charge :accessor .charge
-	    :initform 0)))
+(defclass player (<object>)
+  ((speed :initarg :speed
+	  :accessor .speed)
+   (radius :initarg :radius
+	   :accessor .radius)
+   (charge :initform 20
+	   :accessor .charge)))
 
-(defmethod create ((name (eql '<player>)) &key x y speed img &allow-other-keys)
-  (push (make-instance '<player> :x x :y y :speed speed :img img :territory (make-instance '<circle-territory> :radius 25)) *tobe-registered-objects*))
+(defmethod create ((name (eql 'player)) &key x y speed radius)
+  (register-object
+   (make-instance 'player 
+		  :x x
+		  :y y
+		  :speed speed
+ 		  :radius radius
+		  :territory (make-instance '<circle-territory> :radius radius))))
 
-(defmethod update ((obj <player>) world)
-  (with-slots (up down right left space) world
-    (with-accessors ((x .x) (y .y) (speed .speed) (charge .charge)) obj
-      (let ((dx 0.0)
-	    (dy 0.0))
-	(when up    (decf dy speed))
-	(when down  (incf dy speed))
-	(when left  (decf dx speed))
+(defun fix-position (player)
+  (with-accessors ((x .x) (y .y) (r .radius)) player
+    (when (< x r) (setf x r))
+    (when (> x (- *screen-width* r)) (setf x (- *screen-width* r)))
+    (when (< y r) (setf y r))
+    (when (> y (- *screen-height* r)) (setf y (- *screen-height* r)))))
+
+(defmethod update ((obj player) (world <world>))
+  (with-slots (up down right left space) (.key-state world)
+    (with-accessors ((x .x) (y .y) (r .radius) (speed .speed) (charge .charge)) obj
+      (let ((dx 0)
+	    (dy 0))
+	(when up (decf dy speed))
+	(when down (incf dy speed))
+	(when left (decf dx speed))
 	(when right (incf dx speed))
-	(when (and (/= dx 0.0) (/= dy 0.0))
-	  (setf dx (/ dx (sqrt 2.0))
-		dy (/ dy (sqrt 2.0))))
+	(unless (or (zerop dx) (zerop dy))
+	  (setf dx (/ dx 1.41421356)
+		dy (/ dy 1.41421356)))
 	(incf x dx)
 	(incf y dy)
-	(fix-position obj)
+	(fix-position obj))
 
-	(when (and space (<= charge 0))
-	  (create '<bullet> :x x :y y)
-	  (incf charge 5))
-	(when (> charge 0)
-	  (decf charge))))))
+      (when (< charge 20)
+	(incf charge))
+      (when (and space (= charge 20))
+	(create 'bullet :x x :y (- y r 5) :radius 5 :speed 10)
+	(setf charge 0)))))
 
-(defmethod draw ((obj <player>))
-  (sdl:draw-surface-at-* (.img obj) (- (round (.x obj)) 50) (- (round (.y obj)) 50)))
+(defmethod draw ((obj player))
+  (with-accessors ((x .x) (y .y) (r .radius)) obj
+    (sdl:draw-filled-circle-* (floor x) (floor y) (floor r) :color sdl:*blue*)))
 
-(defmethod fix-position ((obj <player>))
-  (with-accessors ((x .x) (y .y)) obj
-    (when (< x 50) (setq x 50))
-    (when (> x (- *screen-width* 50))  (setq x (- *screen-width* 50)))
-    (when (< y 50) (setq y 50))
-    (when (> y (- *screen-height* 50)) (setq y (- *screen-height* 50)))))
 
 ;;; bullet
-(defclass <bullet> (<object>)
-  ())
+(defclass bullet (<object>)
+  ((speed :initarg :speed
+	  :accessor .speed)
+   (radius :initarg :radius
+	   :accessor .radius)))
 
-(defmethod create ((name (eql '<bullet>)) &key x y &allow-other-keys)
-  (push (make-instance '<bullet> :x x :y (- y 50) :speed 10 :territory (make-instance '<circle-territory> :radius 5)) *tobe-registered-objects*))
+(defmethod create ((name (eql 'bullet)) &key x y speed radius)
+  (register-object 
+   (make-instance 'bullet
+		  :x x
+		  :y y
+		  :speed speed
+		  :radius radius
+		  :territory (make-instance '<circle-territory> :radius radius))))
 
-(defmethod update ((obj <bullet>) world)
-  (with-accessors ((y .y) (speed .speed)) obj
-    (decf y speed))
-  (when (< (.y obj) 5)
-    (setf (.alivep obj) nil)))
+(defmethod update ((obj bullet) (world example-world))
+  (with-accessors ((y .y) (speed .speed) (r .radius)) obj
+    (decf y speed)
+    (when (< y r) (discard obj))))
 
-(defmethod collide ((collidee <bullet>) collider)
-  (declare (ignore collidee collider)))
+(defmethod draw ((obj bullet))
+  (with-accessors ((x .x) (y .y) (r .radius)) obj
+    (sdl:draw-filled-circle-* (floor x) (floor y) (floor r) :color sdl:*white*)))
 
-(defmethod draw ((obj <bullet>))
-  (with-accessors ((x .x) (y .y)) obj
-    (sdl:draw-filled-circle-* (round x) (round y) 5 :color sdl:*cyan*)))
 
-;;; enemy1
-(defclass <enemy1> (<object>)
-  ((direction :initform (random (* 2 +pi+))
-	      :accessor .direction)))
+(defparameter *example-game*
+  (make-instance 'example))
 
-(defmethod create ((name (eql '<enemy1>)) &key x y speed &allow-other-keys)
-  (push (make-instance '<enemy1> :x x :y y :speed speed :img "hoge.png" :territory (make-instance '<circle-territory> :radius 25)) *tobe-registered-objects*))
-
-(defmethod update ((obj <enemy1>) world)
-  (with-accessors ((x .x) (y .y) (speed .speed) (direction .direction)) obj
-    (incf x (* speed (cos direction)))
-    (decf y (* speed (sin direction)))
-
-    (fix-position obj)))
-
-(defmethod fix-position ((obj <enemy1>))
-  (with-accessors ((x .x) (y .y) (speed .speed) (direction .direction)) obj
-    (cond ((< x 25)
-	   (setf direction (- +pi+ direction)
-		 x 25))
-	  ((> x (- *screen-width* 25))
-	   (setf direction (- +pi+ direction)
-		 x (- *screen-width* 25)))
-	  ((< y 25)
-	   (setf direction (- direction)
-		 y 25))
-	  ((> y (- *screen-height* 25))
-	   (setf direction (- direction)
-		 y (- *screen-height* 25))))))
-
-(defmethod collide ((collidee <enemy1>) collider)
-  (setf (.alivep collidee) nil))
-
-(defmethod collidablep ((obj1 <enemy1>) (obj2 <bullet>)) (declare (ignore obj1 obj2)) t)
-(defmethod collidablep ((obj1 <bullet>) (obj2 <enemy1>)) (declare (ignore obj1 obj2)) t)
-
-(defmethod draw ((obj <enemy1>))
-  (with-accessors ((x .x) (y .y) (img .img)) obj
-    (sdl:draw-surface-at-* img (- (round x) 25) (- (round y) 25))))
+;; (with-accessors ((x .x) (y .y) (r .radius))  (car shooting.core::*registered-objects*)
+;;   (list x y r))
