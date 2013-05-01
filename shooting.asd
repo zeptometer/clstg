@@ -6,4 +6,5 @@
   :depends-on (:iterate
 	       :lispbuilder-sdl)
   :components ((:file "utils")
-	       (:file "core" :depends-on ("utils"))))
+	       (:file "core" :depends-on ("utils"))
+	       (:file "middle" :depends-on ("core"))))

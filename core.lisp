@@ -1,26 +1,28 @@
 (shooting.utils:namespace shooting.core
   (:use :common-lisp
 	:iterate)
-  (:export :*screen-width*
+  (:export :*world*
+	   :*screen-width*
 	   :*screen-height*
 
 	   :defkeystate
-	   :register-object
-	   :discard
 
 	   :<territory>
-	   :<circle-territory>
 
 	   :<object>
 	   :.x
 	   :.y
+	   :.territory
 	   :.alivep
-	   
 	   :create
+	   :register-object
 	   :update
 	   :draw
+	   :relate-collide
 	   :collidablep
-	   :colldep
+	   :collidep
+	   :collide
+	   :discard
 
 	   :<game>
 	   :height
@@ -29,21 +31,16 @@
 
 	   :<world>
 	   :.key-state
-	   
-	   :initialize-game
 	   :update-world
 	   :draw-world
-
+	   
+	   :initialize-game
 	   :start-game))
 
 ;;;variables
-(defconstant +pi+ 3.141592653)
-
+(defparameter *world* "represents the world of the game. It contains information of the game, controls detect-collision, and so on.")
 (defparameter *screen-width* 640)
 (defparameter *screen-height* 480)
-
-(defparameter *tobe-registered-objects* nil)
-(defparameter *registered-objects* nil)
 
 ;;; utility
 (defun load-png-image (source-file)
@@ -69,15 +66,13 @@
 (defclass <territory> ()
  ())
 
-(defclass <circle-territory> (<territory>)
-  ((radius :initarg :radius
-	   :accessor .radius)))
-
 ;;; object
 (defclass <object> ()
-  ((x :initarg :x
+  ((x :type float
+      :initarg :x
       :accessor .x)
-   (y :initarg :y
+   (y :type float
+      :initarg :y
       :accessor .y)
    (alivep :initform t
 	   :accessor .alivep)
@@ -85,29 +80,33 @@
 	      :initarg :territory
 	      :accessor .territory)))
 
-(defgeneric create (name &key &allow-other-keys))
-(defgeneric update (obj world))
-(defgeneric draw (obj))
+(defmacro create (name &rest initargs)
+  "make object corresponds to NAME and enter it to *world*"
+  `(register-object (make-instance ',name ,@initargs) *world*))
+(defgeneric register-object (obj world)
+  (:documentation "enter given OBJ to WORLD."))
+(defgeneric update (obj)
+  (:documentation "update OBJ"))
+(defgeneric draw (obj)
+  (:documentation "draw OBJ"))
 (defgeneric collidablep (obj1 obj2))
 (defmethod collidablep ((obj1 <object>) (obj2 <object>))
   nil)
+(defmacro relate-collide (type1 type2)
+  (shooting.utils:with-gensyms (obj1 obj2)
+    (if (eql type1 type2)
+	`(defmethod collidablep ((,obj1 ,type1) (,obj2 ,type2)) t)
+	`(progn 
+	   (defmethod collidablep ((,obj1 ,type1) (,obj2 ,type2)) t)
+	   (defmethod collidablep ((,obj1 ,type2) (,obj2 ,type1)) t)))))
 (defgeneric collidep (obj1 obj2 trr1 trr2))
 (defmethod collidep (obj1 obj2 (trr1 <territory>) (trr2 <territory>))
   nil)
 (defgeneric collide (collidee collider))
 
-(defmethod collidep ((obj1 <object>) (obj2 <object>) 
-		     (trr1 <circle-territory>) (trr2 <circle-territory>))
-  (labels ((sqr (x) (* x x)))
-    (<= (+ (sqr (- (.x obj1) (.x obj2))) (sqr (- (.y obj1) (.y obj2)))) 
-	(sqr (+ (.radius trr1) (.radius trr2))))))
-
-
-(defun register-object (obj)
-  (declare (type <object> obj))
-  (push obj *tobe-registered-objects*))
-
-(defun discard (obj)
+(defgeneric discard (obj))
+(defmethod discard ((obj <object>)) nil)
+(defmethod discard :after ((obj <object>))
   (setf (.alivep obj) nil))
 
 ;;; world
@@ -129,9 +128,8 @@
 		  :initform 0)))
 
 (defgeneric initialize-game (game))
-(defgeneric update-world (world))
-(defgeneric draw-world (world))
 
+(defgeneric update-world (world))
 (defmethod update-world ((world <world>)) nil)
 (defmethod update-world :before ((world <world>))
   (with-accessors ((schedule .schedule) (current-frame .current-frame)) world
@@ -142,59 +140,32 @@
 	  (setf schedule rest))))
     (incf current-frame)))
 
-(defmethod draw-world ((wrold <world>)) nil)
+(defgeneric draw-world (world))
+(defmethod draw-world ((world <world>)) nil)
 
 
-;;; main loop
+;; main loop
 (defun start-game (game)
-  (setf *registered-objects* nil)
-  (let ((world (initialize-game game)))
-    (sdl:with-init ()
-      (sdl:window *screen-width* *screen-height* :title-caption "test") 
-      (setf (sdl:frame-rate) 60) 
-      (sdl:initialise-default-font sdl:*font-10x20*)
+  (initialize-game game)
+  (sdl:with-init ()
+    (sdl:window *screen-width* *screen-height* :title-caption "test") 
+    (setf (sdl:frame-rate) 60) 
+    (sdl:initialise-default-font sdl:*font-10x20*)
 
-      (sdl:update-display)
+    (sdl:update-display)
 
-      (sdl:with-events ()
-	(:quit-event () t)
-	(:key-down-event (:key key)
-			 (if (sdl:key= key :sdl-key-escape)
-			     (sdl:push-quit-event)
-			     (update-key-state key t (.key-state world))))
-	(:key-up-event (:key key)
-		       (update-key-state key nil (.key-state world)))
-	(:idle ()
-	       (sdl:clear-display sdl:*black*)
+    (sdl:with-events ()
+      (:quit-event () t)
+      (:key-down-event (:key key)
+		       (if (sdl:key= key :sdl-key-escape)
+			   (sdl:push-quit-event)
+			   (update-key-state key t (.key-state *world*))))
+      (:key-up-event (:key key)
+		     (update-key-state key nil (.key-state *world*)))
+      (:idle ()
+	     (sdl:clear-display sdl:*black*)
 
-	       ;; update world
-	       (update-world world)
+	     (update-world *world*)
+	     (draw-world *world*)
 
-	       ;; update each object
-	       (iter (for obj in *registered-objects*)
-		     (update obj world))
-
-	       ;; detect collidion
-	       ;; This collidion-detect uses full search, and is unefficient when (length *registered-objects*) is large.
-	       ;; More efficient algorithm such as quadtree should be used.
-	       (iter (for obj1 in *registered-objects*)
-		     (iter (for obj2 in *registered-objects*)
-			   (when (and (not (eq obj1 obj2))
-				      (collidablep obj1 obj2)
-				      (collidep obj1 obj2 (.territory obj1) (.territory obj2)))
-			     (collide obj1 obj2))))
-
-	       ;; update *registered-objects*
-	       (let ((alive (iter (for obj in *registered-objects*)
-				  (when (.alivep obj) (collect obj)))))
-		 (setf *registered-objects*
-		       (nconc alive *tobe-registered-objects*)
-		       *tobe-registered-objects* nil))
-	       
-	       ;; draw world
-	       (draw-world world)
-
-	       ;; draw alive objects
-	       (iter (for obj in *registered-objects*)
-		     (draw obj))
-	       (sdl:update-display))))))
+	     (sdl:update-display)))))
