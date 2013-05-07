@@ -9,6 +9,7 @@
 	   :.direction
 	   :<circle-shape>
 	   :<fixed>
+	   :<out-to-die>
 	   :fix-position
 	   :<full-search>))
 
@@ -56,7 +57,7 @@
 
 
 (defclass <circle-shape> (<object>)
-  ((territory :type <circle-territory>
+  ((shooting.core::territory :type <circle-territory>
 	      :initarg :territory
 	      :accessor .territory)
    (color :type sdl:color
@@ -66,7 +67,7 @@
 (defmethod .radius ((obj <circle-shape>))
   (.radius (.territory obj)))
 
-(defmethod initialize-instance ((instance <circle-shape>) &key radius &allow-other-keys)
+(defmethod initialize-instance :after ((instance <circle-shape>) &key radius &allow-other-keys)
   (setf (.territory instance)
 	(make-instance '<circle-territory> :radius radius)))
 
@@ -79,10 +80,13 @@
 
 (defmethod out-of-world-p ((obj <circle-shape>))
   (with-accessors ((x .x) (y .y) (r .radius)) obj
-    (or (< x (- r)) (> x (+ *screen-width* r)) (< y (- r)) (> y (+ *screen-height* r)))))
+    (or (< x (- r)) 
+	(> x (+ *screen-width* r))
+	(< y (- r))
+	(> y (+ *screen-height* r)))))
 
 (defmethod draw ((obj <circle-shape>))
-  (sdl:draw-filled-circle-* (.x obj) (.y obj) (.radius (.territory obj)) :color (.color obj)))
+  (sdl:draw-filled-circle-* (floor (.x obj)) (floor (.y obj)) (floor (.radius (.territory obj))) :color (.color obj)))
 
 
 ;; world

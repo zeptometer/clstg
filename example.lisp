@@ -30,23 +30,23 @@
 		   :schedule schedule
 		   :key-state (make-instance 'key-state)))
     (create player
-	    :x (/ width 2)
-	    :y (- height 10 (/ player-size 2))
-	    :speed player-speed
-	    :radius (/ player-size 2)
+	    :x (float (/ width 2))
+	    :y (float (- height 10 (/ player-size 2)))
+	    :speed (float player-speed)
+	    :radius (float (/ player-size 2))
 	    :color sdl:*white*)))
 
 
 ;;; enemy
-(defclass enemy (<circle-shape> <directed> <out-to-die>)
+(defclass enemy (<circle-shape> <out-to-die> <directed>)
   ())
 
 ;;; player
-(defclass player (<circle-shape> <directed> <fixed>)
-  ((charge :initform 20
+(defclass player (<circle-shape> <fixed> <directed>)
+  ((charge :initform 5
 	   :accessor .charge)
    (acc :initarg :acc
-	:initform 1
+	:initform 0.05
 	:accessor .acc)))
 
 (defmethod update ((obj player))
@@ -68,14 +68,14 @@
 	(setf speed (sqrt (+ (* dx dx) (* dy dy)))
 	      dir (atan dy dx)))
 
-      (when (< charge 20)
+      (when (< charge 5)
 	(incf charge))
-      (when (and space (= charge 20))
-	(create 'bullet :x x :y (- y r 5) :radius 2 :speed 10 :direction dir)
+      (when (and space (= charge 5))
+	(create bullet :x (+ x (* (+ r 5) (cos dir))) :y (+ y (* (+ r 5) (sin dir))) :radius 2.0 :speed 10.0 :direction dir :color sdl:*blue*)
 	(setf charge 0)))))
 
 ;;; bullet
-(defclass bullet (<circle-shape> <directed> <out-to-die>) ())
+(defclass bullet (<circle-shape> <out-to-die> <directed>) ())
 
 (relate-collide player enemy)
 (relate-collide bullet enemy)
@@ -85,15 +85,15 @@
 (defparameter *example-game*
   (make-instance 'example
 		 :schedule
-		 (list 0
-		       #'(lambda ()
-			   (iter (repeat 100)
-				 (create enemy
-					 :x (random *screen-width*)
-					 :y (random *screen-height*)
-					 :radius (+ 5 (random 20))
-					 :direction (random 6.283)
-					 :speed (+ 1 (random 2.0))))))))
-
-;; (with-accessors ((x .x) (y .y) (r .radius))  (car shooting.core::*registered-objects*)
-;;   (list x y r))
+		 (iter (for i from 1 to 100)
+		       (collect (* 60 i))
+		       (collect
+			   #'(lambda ()
+			       (create enemy
+				       :x (* (random 1.0) *screen-width*)
+				       :y (* (random 1.0) *screen-height*)
+				       :radius (+ 5.0 (random 20.0))
+				       :direction (random 6.283)
+				       :speed (+ 1.0 (random 2.0))
+				       :color sdl:*red*))))
+		 :player-speed 0.0))

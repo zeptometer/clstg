@@ -87,6 +87,7 @@
   (:documentation "enter given OBJ to WORLD."))
 (defgeneric update (obj)
   (:documentation "update OBJ"))
+(defmethod update ((obj <object>)) nil)
 (defgeneric draw (obj)
   (:documentation "draw OBJ"))
 (defgeneric collidablep (obj1 obj2))
@@ -103,7 +104,8 @@
 (defmethod collidep (obj1 obj2 (trr1 <territory>) (trr2 <territory>))
   nil)
 (defgeneric collide (collidee collider))
-
+(defmethod collide ((collidee <object>) (collider <object>))
+  (discard collidee))
 (defgeneric discard (obj))
 (defmethod discard ((obj <object>)) nil)
 (defmethod discard :after ((obj <object>))
@@ -146,9 +148,10 @@
 
 ;; main loop
 (defun start-game (game)
-  (initialize-game game)
   (sdl:with-init ()
-    (sdl:window *screen-width* *screen-height* :title-caption "test") 
+    (initialize-game game)
+
+    (sdl:window *screen-width* *screen-height* :title-caption "test")
     (setf (sdl:frame-rate) 60) 
     (sdl:initialise-default-font sdl:*font-10x20*)
 
