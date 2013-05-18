@@ -7,6 +7,9 @@
 	   :<directed>
 	   :.speed
 	   :.direction
+	   :<dxdy>
+	   :.dx
+	   :.dy
 	   :<circle-shape>
 	   :<fixed>
 	   :<out-to-die>
@@ -53,6 +56,23 @@
   (with-accessors ((x .x) (y .y) (speed .speed) (direction .direction)) obj
     (incf x (* speed (cos direction)))
     (incf y (* speed (sin direction)))))
+
+
+
+(defclass <dxdy> (<object>)
+  ((dx :type float
+       :accessor .dx
+       :initarg :dx
+       :initform 0.0)
+   (dy :type float
+       :accessor .dy
+       :initarg :dy
+       :initform 0.0)))
+
+(defmethod update :after ((obj <dxdy>))
+  (with-accessors ((x .x) (y .y) (dx .dx) (dy .dy)) obj
+    (incf x dx)
+    (incf y dy)))
 
 
 
